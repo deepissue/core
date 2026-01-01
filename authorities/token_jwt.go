@@ -7,9 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang-jwt/jwt/v4"
 	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v4"
 )
 
 type Claims struct {
@@ -36,9 +37,14 @@ func NewJwtTokenHandler(app string, settings *Settings) (TokenHandler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoding public key: %v", err)
 	}
-	h.pub, err = x509.ParsePKCS1PublicKey(block)
+	pub, err := x509.ParsePKIXPublicKey(block)
 	if err != nil {
 		return nil, fmt.Errorf("parser public key: %v", err)
+	}
+	var ok bool
+	h.pub, ok = pub.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("invalid public key type")
 	}
 
 	block, err = base64.StdEncoding.DecodeString(settings.PKCS8PrivateKey)
@@ -49,7 +55,6 @@ func NewJwtTokenHandler(app string, settings *Settings) (TokenHandler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parser PKCS8 private key: %v", err)
 	}
-	var ok bool
 	h.pri, ok = pri.(*rsa.PrivateKey)
 	if !ok {
 		return nil, fmt.Errorf("invalid PKCS8 private key")
@@ -68,11 +73,13 @@ func (m *jwtTokenHandler) GenerateToken(auth *Authorized) (string, error) {
 	claims.Principal, _ = json.Marshal(auth)
 
 	if m.settings.Timeout > 0 {
-		claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(m.settings.Timeout * time.Nanosecond))
+		claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(time.Duration(m.settings.Timeout) * time.Hour))
+	} else {
+		claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(24 * time.Hour))
 	}
 
-	tokenClaims := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	token, err := tokenClaims.SignedString([]byte(m.settings.SimpleKey))
+	tokenClaims := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token, err := tokenClaims.SignedString(m.pri)
 	if err != nil {
 		return "", fmt.Errorf("jwt signing failed: %v", err)
 	}
@@ -90,8 +97,10 @@ func (m *jwtTokenHandler) parseToken(token string) (*Claims, error) {
 	}
 
 	tokenClaims, err := jwt.ParseWithClaims(fields[1], &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		token.Method.Alg()
-		return []byte(m.settings.SimpleKey), nil
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return m.pub, nil
 	})
 
 	if err != nil {

@@ -36,11 +36,10 @@ func (m *HttpServer) Handle(method string, path string, handler *Handler) {
 
 	m.engine.Handle(method, path, func(c *gin.Context) {
 		ctx := NewContext(c)
-		// if err := m.Authorization(ctx); err != nil {
-		// 	ctx.Status(401)
-		// 	ctx.Writer.WriteString(err.Error())
-		// 	return
-		// }
+		if err := m.Authorization(ctx); err != nil {
+			ctx.WriteFail(401, err.Error())
+			return
+		}
 		err := handler.Func(ctx)
 		if nil != err {
 			ctx.Status(400)

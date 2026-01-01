@@ -3,20 +3,22 @@ package authorities
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 )
 
 type redisTokenHandler struct {
-	settings *Settings
-	redis    *redis.Client
+	timeout time.Duration
+	redis   *redis.Client
 }
 
-func NewRedisTokenHandler(settings *Settings, redis *redis.Client) (TokenHandler, error) {
+func NewRedisTokenHandler(redis *redis.Client, timeout time.Duration) (TokenHandler, error) {
 
 	return &redisTokenHandler{
-		settings: settings,
-		redis:    redis,
+		redis:   redis,
+		timeout: timeout,
 	}, nil
 }
 
@@ -28,7 +30,7 @@ func (r *redisTokenHandler) GenerateToken(auth *Authorized) (string, error) {
 	}
 
 	token := uuid.New().String()
-	if err := r.redis.Set(context.Background(), token, data, r.settings.Timeout).Err(); err != nil {
+	if err := r.redis.Set(context.Background(), token, data, r.timeout).Err(); err != nil {
 		return "", err
 	}
 

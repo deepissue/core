@@ -23,7 +23,9 @@ func (m *HttpServer) Authorization(ctx *Context) error {
 	if contained {
 		return nil
 	}
-
+	if m.authorization.Settings().DefaultPolicy == authorities.AuthorizationPolicyAllow {
+		return nil
+	}
 	token := ctx.GetHeader(AuthorizationKey)
 	if "" == token {
 		return errors.New("authorization token required")
